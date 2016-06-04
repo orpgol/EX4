@@ -264,7 +264,11 @@ submission = pd.DataFrame({"id": test["id"], "prediction": predictions})
 submission.to_csv('orpaz_submission.csv', index=False)
 ```
 
-![All submition results] (all_submitions.png)
-```python
+##### The next pic shows all the submitions i made, showing my slow improvement over time.
 
-```
+![All submition results] (all_submitions.png)
+
+#### And my final submition!
+
+
+
