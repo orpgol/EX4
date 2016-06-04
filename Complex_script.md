@@ -11,7 +11,9 @@ Crowdflower Search Results Relevance
 ------------------
 
 ##### The task was to find how relevant a search result is to a query.
-##### My first approach was to replace similar words in the query and results to the same words. Using Word2Vec, i changed all high similarity words to be the same words. 
+##### My first approach was to replace similar words in the query and results to the same words. Using Word2Vec, i changed all high similarity words to be the same words. but that wasn't very helpfull. 
+##### Next i used the similarity score between the whole query and the results, which gave me better results.
+##### So i wanted a better way to find similarities, but also to improve the previous results.
 
 ```python
 from nltk.corpus import stopwords
@@ -35,12 +37,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 nltk.data.path.append('/Users/orpaz/Developer/nltk_data')
 ```
 
-
+##### This function i used to Stem the data before running any feature extraction to remove unneccesery words suffixes, and there for improve results.
 ```python
 def stem_data(data):
-    '''
-    Helper function to stem the raw training and test data.
-    '''
     stemmer = PorterStemmer()
 
     for i, row in data.iterrows():
@@ -60,7 +59,9 @@ def stem_data(data):
         data.set_value(i, "query", str(q))
         data.set_value(i, "product_title", str(t))
         data.set_value(i, "product_description", str(d))
-
+```
+##### Next, i used a stop words removal function, to remove all unwanted words that we should not consider when feature extracting.
+```python
 def remove_stop_words(data):
     '''
     Helper function to remove stop words
@@ -81,14 +82,10 @@ def remove_stop_words(data):
         data.set_value(i, "query", q)
         data.set_value(i, "product_title", t)
         data.set_value(i, "product_description", d)
-
+```
+##### The next step was to improve the similarity between query and product title, and query and description. This function returnes the n gram of a string. That is all the possible combinations of n tokens of the string (which i can later compre)
+```python
 def get_n_gram_string_similarity(s1, s2, n):
-    '''
-    Helper function to get the n-gram "similarity" between two strings,
-    where n-gram similarity is defined as the percentage of n-grams
-    the two strings have in common out of all of the n-grams across the
-    two strings.
-    '''
     s1 = set(get_n_grams(s1, n))
     s2 = set(get_n_grams(s2, n))
     if len(s1.union(s2)) == 0:
@@ -97,11 +94,6 @@ def get_n_gram_string_similarity(s1, s2, n):
         return float(len(s1.intersection(s2)))/float(len(s1.union(s2)))
 
 def get_n_grams(s, n):
-    '''
-    Helper function that takes in a string and the degree of n gram n and returns a list of all the
-    n grams in the string. String is separated by space.
-    '''
-
     token_pattern = re.compile(r"(?u)\b\w+\b")
     word_list = token_pattern.findall(s)
     n_grams = []
@@ -115,39 +107,12 @@ def get_n_grams(s, n):
         if len(n_gram) == n:
             n_grams.append(tuple(n_gram))
     return n_grams
+```
 
-def calculate_nearby_relevance_tuple(group, row, col_name, ngrams):
-    '''
-    Takes the group of rows for a particular query ("group") and a row within that 
-    group ("row") and returns a dictionary of "similarity"  calculations of row compared to the rest 
-    of the rows in group. Returns a tuple of calculations that will be used to create similarity features for row.
-    '''
+##### The next two function are my feature extraction. They prepare the dataset and create the collumns to be later filled, and also perform small similarity checkes on the dataset, like tokenizing the query description and title, and finding intersections between them.
 
-    ngrams = range(1, ngrams + 1)
-    #Weighted ratings takes the form
-    #{median rating : {ngram : [number of comparisons with that rating/ngram, cumulative sum of similarity for that rating/ngram]}}
-    weighted_ratings = {rating: {ngram: [0,0] for ngram in ngrams} for rating in range(1,5)}
-
-    for i, group_row in group.iterrows():
-        if group_row['id'] != row['id']:
-
-            for ngram in ngrams:
-                similarity = get_n_gram_string_similarity(row[col_name], group_row[col_name], ngram)
-                weighted_ratings[group_row['median_relevance']][ngram][1] += similarity
-                weighted_ratings[group_row['median_relevance']][ngram][0] += 1
-
-    return weighted_ratings
-
-################################################################
-################ FEATURE EXTRACTION FUNCTIONS ##################
-################################################################
-
+```python
 def extract_features(data):
-    '''
-    Perform feature extraction for variables that can be extracted
-    the same way for both training and test data sets. The input
-    "data" is the pandas dataframe for the training or test sets.
-    '''
     token_pattern = re.compile(r"(?u)\b\w+\b")
     data["query_tokens_in_title"] = 0.0
     data["query_tokens_in_description"] = 0.0
@@ -174,82 +139,12 @@ def extract_features(data):
         data.set_value(i, "two_grams_in_q_and_t", len(two_grams_in_query.intersection(two_grams_in_title)))
         data.set_value(i, "two_grams_in_q_and_d", len(two_grams_in_query.intersection(two_grams_in_description)))
 
-def extract_training_and_test_features(train, test):
-    '''
-    Perform feature extraction for variables that require both 
-    training and test data sets for extraction (i.e. you cannot extract the test features without using data from the training set). 
-    E.g. features developed include average and relevance for each 
-    query in training, and the 1-gram and 2-gram similarity weighted relevance.
-    '''
-    train_group = train.groupby('query')
-    test["q_mean_of_training_relevance"] = 0.0
-    test["q_median_of_training_relevance"] = 0.0
-    test["avg_relevance_variance"] = 0
-    for i, row in train.iterrows():
-        group = train_group.get_group(row["query"])
-        
-        q_mean = group["median_relevance"].mean()
-        train.set_value(i, "q_mean_of_training_relevance", q_mean)
-        test.loc[test["query"] == row["query"], "q_mean_of_training_relevance"] = q_mean
-
-        q_median = group["median_relevance"].median()
-        train.set_value(i, "q_median_of_training_relevance", q_median)
-        test.loc[test["query"] == row["query"], "q_median_of_training_relevance"] = q_median
-
-        avg_relevance_variance = group["relevance_variance"].mean()
-        train.set_value(i, "avg_relevance_variance", avg_relevance_variance)
-        test.loc[test["query"] == row["query"], "avg_relevance_variance"] = avg_relevance_variance
-
-        weight_dict = calculate_nearby_relevance_tuple(group, row, col_name = 'product_title', ngrams = 2)
-        for rating in weight_dict:
-            for ngram in weight_dict[rating]:
-                variable_name = "average_title_" + str(ngram) + "gram_similarity_" + str(rating)
-                if weight_dict[rating][ngram][0] != 0:
-                    train.set_value(i, variable_name, float(weight_dict[rating][ngram][1])/float(weight_dict[rating][ngram][0]))
-                else:
-                    train.set_value(i, variable_name, 0)
-
-        weight_dict = calculate_nearby_relevance_tuple(group, row, col_name = 'product_description', ngrams = 2)
-        for rating in weight_dict:
-            for ngram in weight_dict[rating]:
-                variable_name = "average_description_" + str(ngram) + "gram_similarity_" + str(rating)
-                if weight_dict[rating][ngram][0] != 0:
-                    train.set_value(i, variable_name, float(weight_dict[rating][ngram][1])/float(weight_dict[rating][ngram][0]))
-                else:
-                    train.set_value(i, variable_name, 0)
-
-
-    for i, row in test.iterrows():
-        group = train_group.get_group(row["query"])
-
-        weight_dict = calculate_nearby_relevance_tuple(group, row, col_name = 'product_title', ngrams = 2)
-        for rating in weight_dict:
-            for ngram in weight_dict[rating]:
-                variable_name = "average_title_" + str(ngram) + "gram_similarity_" + str(rating)
-                if weight_dict[rating][ngram][0] != 0:
-                    test.set_value(i, variable_name, float(weight_dict[rating][ngram][1])/float(weight_dict[rating][ngram][0]))
-                else:
-                    test.set_value(i, variable_name, 0)
-
-        weight_dict = calculate_nearby_relevance_tuple(group, row, col_name = 'product_description', ngrams = 2)
-        for rating in weight_dict:
-            for ngram in weight_dict[rating]:
-                variable_name = "average_description_" + str(ngram) + "gram_similarity_" + str(rating)
-                if weight_dict[rating][ngram][0] != 0:
-                    test.set_value(i, variable_name, float(weight_dict[rating][ngram][1])/float(weight_dict[rating][ngram][0]))
-                else:
-                    test.set_value(i, variable_name, 0)
-
-
 def extract(train, test):
 
     print("Extracting training features")
     extract_features(train)
     print("Extracting test features")
     extract_features(test)
-
-#     print("Extracting features that must use data in the training set for both test and training data extraction")
-#     extract_training_and_test_features(train, test)
 
     y_train = train.loc[:,"median_relevance"]
     train.drop("median_relevance", 1)
@@ -261,7 +156,10 @@ def extract(train, test):
         y_test = []
 
     return train, y_train, test, y_test
+```
 
+##### function to return the final prediction output of the models i will use later.
+```python
 def ouput_final_model(model, train, test, features):
 
     y = train["median_relevance"]
@@ -273,14 +171,14 @@ def ouput_final_model(model, train, test, features):
     return (submission, model.score(train_with_features, y))
 ```
 
-
+##### Loading the data sets
 ```python
 # Load the training file
 train = pd.read_csv("train.csv").fillna("")
 test  = pd.read_csv("test.csv").fillna("")
 ```
 
-
+##### First thing is to stem the dataset and remove stop words before any extraction is made. Then i can extract the features of both train and test.
 ```python
 #stem first
 stem_data(train)
@@ -314,9 +212,9 @@ pickle.dump(test, open('test_extracted_df.pkl', 'wb'))
 
 
 
+##### The data was saved in each step to prevent double calculations. So here we load the previous step results. Then i define 3 different models to create an ensamble, declare the features i will be using, and then send each model to be fitted and to predict the test set. The results are saved for each model. 
+##### Later i decided to add a weight to each model, so i started returning the scores of each model and then will decide on an appropreate weight for each model.
 ```python
-#Load all of the data extracted from the separate extraction.py script, including the full train/test data 
-#and the StratifiedKFold data
 train = pickle.load(open('train_extracted_df.pkl', 'rb'))
 test = pickle.load(open('test_extracted_df.pkl', 'rb'))
 y_train = train["median_relevance"]
@@ -350,7 +248,7 @@ pickle.dump(adaboost_final_predictions, open('adaboost_final_predictions.pkl', '
     Begin AdaBoost model
 
 
-
+##### Here we take the predictions from each model, assign a weight based on the previous step score results for each model, and then apply the weight while ensambling the results from the 3 models i used to recieve a final result.
 ```python
 preds = [rf_final_predictions, svc_final_predictions, adaboost_final_predictions]
 #Decided on weights based on the model scores
@@ -359,10 +257,11 @@ predictions = sum([weights[x] * preds[x]["prediction"].astype(int) for x in rang
 predictions = [int(round(p)) for p in predictions]
 ```
 
+##### sumbission file preparations 
 
 ```python
 submission = pd.DataFrame({"id": test["id"], "prediction": predictions})
-submission.to_csv('ensembled_submission.csv', index=False)
+submission.to_csv('orpaz_submission.csv', index=False)
 ```
 
 
