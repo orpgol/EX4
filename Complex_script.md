@@ -10,7 +10,8 @@ Ex4
 Crowdflower Search Results Relevance
 ------------------
 
-#### Add text
+##### The task was to find how relevant a search result is to a query.
+##### My first approach was to replace similar words in the query and results to the same words. Using Word2Vec, i changed all high similarity words to be the same words. 
 
 ```python
 from nltk.corpus import stopwords
