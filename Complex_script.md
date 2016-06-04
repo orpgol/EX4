@@ -264,7 +264,7 @@ submission = pd.DataFrame({"id": test["id"], "prediction": predictions})
 submission.to_csv('orpaz_submission.csv', index=False)
 ```
 
-
+![All submition results] (all_submitions.png)
 ```python
 
 ```
